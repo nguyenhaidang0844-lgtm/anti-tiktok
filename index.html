@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Cảnh báo dùng điện thoại - Độ nhạy cao</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: #1e1e2f;
+      color: #eee;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-weight: 400;
+      margin-bottom: 0.2em;
+      text-align: center;
+      color: #ffb86c;
+    }
+    .sub {
+      color: #aaa;
+      margin-bottom: 1.5em;
+      text-align: center;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 25px;
+      justify-content: center;
+      align-items: flex-start;
+      width: 100%;
+      max-width: 1100px;
+    }
+    .video-panel {
+      background: #2a2a3c;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    video, canvas {
+      width: 100%;
+      max-width: 500px;
+      border-radius: 12px;
+      background: #000;
+      display: block;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    .video-wrapper {
+      position: relative;
+      display: inline-block;
+      border-radius: 12px;
+      overflow: hidden;
+      line-height: 0;
+    }
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      align-items: center;
+    }
+    button {
+      background: #4a4a6a;
+      border: none;
+      color: white;
+      padding: 12px 28px;
+      border-radius: 30px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    }
+    button:hover {
+      background: #5e5e86;
+      transform: translateY(-2px);
+    }
+    button:active {
+      transform: translateY(1px);
+    }
+    button.active {
+      background: #ff5555;
+      color: white;
+      box-shadow: 0 0 15px #ff5555aa;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .sensitivity-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #3a3a52;
+      padding: 8px 16px;
+      border-radius: 30px;
+      margin: 10px 0;
+    }
+    .sensitivity-group label {
+      font-size: 0.9rem;
+      color: #ccc;
+    }
+    input[type=range] {
+      width: 120px;
+      cursor: pointer;
+    }
+    #sensValue {
+      font-weight: bold;
+      color: #ffb86c;
+      min-width: 45px;
+      display: inline-block;
+    }
+    .status-panel {
+      background: #2a2a3c;
+      border-radius: 20px;
+      padding: 20px;
+      max-width: 320px;
+      width: 100%;
+      box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+      align-self: stretch;
+    }
+    .status-panel h2 {
+      margin-top: 0;
+      font-weight: 400;
+      color: #ffb86c;
+      border-bottom: 1px solid #444;
+      padding-bottom: 10px;
+    }
+    .detection-list {
+      list-style: none;
+      padding: 0;
+      margin: 15px 0;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .detection-list li {
+      background: #3a3a52;
+      margin-bottom: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 500;
+    }
+    .badge {
+      background: #ffb86c;
+      color: #1e1e2f;
+      border-radius: 20px;
+      padding: 2px 12px;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .alert-message {
+      background: #ff555522;
+      border-left: 4px solid #ff5555;
+      padding: 12px;
+      border-radius: 8px;
+      margin: 10px 0;
+      color: #ff8888;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .alert-message::before {
+      content: "⚠️";
+      font-size: 1.3rem;
+    }
+    .hidden {
+      display: none;
+    }
+    .note {
+      font-size: 0.8rem;
+      color: #999;
+      margin-top: 10px;
+    }
+    @media (max-width: 700px) {
+      .container {
+        flex-direction: column;
+        align-items: center;
+      }
+      video, canvas {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>📵 Cảnh báo dùng điện thoại (độ nhạy cao)</h1>
+  <p class="sub">Phát hiện điện thoại ở nhiều khoảng cách – kéo thanh trượt để chỉnh độ nhạy</p>
+
+  <div class="container">
+    <div class="video-panel">
+      <div class="video-wrapper">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="sensitivity-group">
+        <label for="sensitivitySlider">🔎 Độ nhạy:</label>
+        <input type="range" id="sensitivitySlider" min="20" max="80" value="35" step="1">
+        <span id="sensValue">0.35</span>
+      </div>
+      <div class="controls">
+        <button id="startBtn" title="Bật camera và bắt đầu phát hiện">
+          <span>📷</span> Bật camera
+        </button>
+        <button id="stopBtn" disabled title="Dừng camera và phát hiện">
+          <span>⏹️</span> Dừng
+        </button>
+      </div>
+      <p class="note">* Cho phép trình duyệt sử dụng webcam. Giá trị càng thấp càng nhạy (dễ cảnh báo hơn).</p>
+    </div>
+
+    <div class="status-panel">
+      <h2>📊 Trạng thái</h2>
+      <div id="statusText">Đang chờ bật camera...</div>
+      <div id="alertBox" class="alert-message hidden">
+        <span>PHÁT HIỆN ĐIỆN THOẠI!</span>
+      </div>
+      <strong>Vật thể phát hiện:</strong>
+      <ul id="detectionList" class="detection-list">
+        <li>Chưa có dữ liệu</li>
+      </ul>
+      <p class="note">Mô hình COCO-SSD. Kéo thanh trượt để giảm ngưỡng (bắt được điện thoại nhỏ/xa).</p>
+    </div>
+  </div>
+
+  <!-- TensorFlow.js và COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
+  <script>
+    (function() {
+      // --- DOM ---
+      const video = document.getElementById('webcam');
+      const canvas = document.getElementById('overlay');
+      const ctx = canvas.getContext('2d');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+      const statusDiv = document.getElementById('statusText');
+      const alertBox = document.getElementById('alertBox');
+      const detectionList = document.getElementById('detectionList');
+      const sensitivitySlider = document.getElementById('sensitivitySlider');
+      const sensValue = document.getElementById('sensValue');
+
+      // --- Trạng thái ---
+      let model = null;
+      let stream = null;
+      let isRunning = false;
+      let animationFrameId = null;
+      let lastDetectionTime = 0;
+      const DETECT_INTERVAL_MS = 300; // Quét nhanh hơn một chút (300ms)
+      
+      let lastAlertTime = 0;
+      const ALERT_COOLDOWN_MS = 2200; // Cảnh báo tối thiểu cách nhau 2.2s
+      let audioCtx = null;
+
+      // Độ nhạy (ngưỡng) mặc định
+      let currentThreshold = parseFloat(sensitivitySlider.value) / 100;
+
+      // --- Audio ---
+      function getAudioContext() {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        return audioCtx;
+      }
+
+      function playAlertSound() {
+        try {
+          const ctx = getAudioContext();
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(800, now);
+          osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+          osc.frequency.exponentialRampToValueAtTime(600, now + 0.3);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.4);
+        } catch (e) {
+          console.warn('Không thể phát âm thanh:', e);
+        }
+      }
+
+      // --- Cập nhật UI ---
+      function updateDetectionList(predictions) {
+        detectionList.innerHTML = '';
+        if (!predictions || predictions.length === 0) {
+          detectionList.innerHTML = '<li>Không phát hiện vật thể</li>';
+          return;
+        }
+        const sorted = [...predictions].sort((a, b) => b.score - a.score);
+        const top5 = sorted.slice(0, 5);
+        top5.forEach(pred => {
+          const li = document.createElement('li');
+          const displayClass = pred.class === 'cell phone' ? '📱 cell phone' : pred.class;
+          li.innerHTML = `<span>${displayClass}</span><span class="badge">${Math.round(pred.score * 100)}%</span>`;
+          if (pred.class === 'cell phone') {
+            li.style.background = '#ff555533';
+            li.style.borderLeft = '4px solid #ff5555';
+          }
+          detectionList.appendChild(li);
+        });
+      }
+
+      function drawPredictions(predictions) {
+        if (video.videoWidth && video.videoHeight) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!predictions) return;
+        ctx.font = '16px "Segoe UI", sans-serif';
+        ctx.lineWidth = 3;
+        predictions.forEach(pred => {
+          const [x, y, width, height] = pred.bbox;
+          const isPhone = pred.class === 'cell phone';
+          ctx.strokeStyle = isPhone ? '#ff3333' : '#4da6ff';
+          ctx.fillStyle = isPhone ? 'rgba(255, 50, 50, 0.25)' : 'rgba(77, 166, 255, 0.15)';
+          ctx.beginPath();
+          ctx.rect(x, y, width, height);
+          ctx.fill();
+          ctx.stroke();
+          const label = `${pred.class} (${Math.round(pred.score * 100)}%)`;
+          ctx.fillStyle = isPhone ? '#ff3333' : '#ffffff';
+          ctx.shadowColor = '#000';
+          ctx.shadowBlur = 4;
+          ctx.fillText(label, x + 5, y > 20 ? y - 8 : y + 20);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = 'transparent';
+        });
+      }
+
+      function checkForPhoneAlert(predictions) {
+        if (!predictions) return;
+        // Dùng ngưỡng hiện tại (từ slider)
+        const phoneDetected = predictions.some(pred =>
+          pred.class === 'cell phone' && pred.score >= currentThreshold
+        );
+        const now = Date.now();
+        if (phoneDetected) {
+          alertBox.classList.remove('hidden');
+          if (now - lastAlertTime > ALERT_COOLDOWN_MS) {
+            playAlertSound();
+            lastAlertTime = now;
+          }
+        } else {
+          alertBox.classList.add('hidden');
+        }
+      }
+
+      // --- Vòng lặp phát hiện ---
+      async function detectionLoop() {
+        if (!isRunning || !model || !stream) return;
+        try {
+          const now = Date.now();
+          if (now - lastDetectionTime >= DETECT_INTERVAL_MS) {
+            if (video.readyState === 4) {
+              const predictions = await model.detect(video);
+              lastDetectionTime = now;
+              drawPredictions(predictions);
+              updateDetectionList(predictions);
+              checkForPhoneAlert(predictions);
+            }
+          }
+        } catch (error) {
+          console.error('Lỗi phát hiện:', error);
+          statusDiv.textContent = '⚠️ Lỗi phát hiện, đang thử lại...';
+        }
+        animationFrameId = requestAnimationFrame(detectionLoop);
+      }
+
+      // --- Camera ---
+      function stopCamera() {
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+        video.srcObject = null;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        isRunning = false;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        startBtn.classList.remove('active');
+        alertBox.classList.add('hidden');
+        statusDiv.textContent = 'Đã dừng camera.';
+        detectionList.innerHTML = '<li>Chưa có dữ liệu</li>';
+      }
+
+      async function startCamera() {
+        if (isRunning) return;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        startBtn.classList.add('active');
+        statusDiv.textContent = 'Đang yêu cầu quyền truy cập webcam...';
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              facingMode: 'user'
+            }
+          });
+          video.srcObject = stream;
+          await new Promise(resolve => { video.onloadedmetadata = resolve; });
+          await video.play();
+
+          if (!model) {
+            statusDiv.textContent = 'Đang tải mô hình COCO-SSD...';
+            model = await cocoSsd.load({ base: 'mobilenet_v2' });
+            statusDiv.textContent = 'Đã tải mô hình. Bắt đầu phát hiện...';
+          }
+          isRunning = true;
+          lastDetectionTime = 0;
+          lastAlertTime = 0;
+          statusDiv.textContent = '🟢 Đang giám sát...';
+          detectionLoop();
+        } catch (error) {
+          console.error('Lỗi truy cập webcam:', error);
+          statusDiv.textContent = '❌ Không thể truy cập webcam. Hãy kiểm tra quyền.';
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          startBtn.classList.remove('active');
+          if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            stream = null;
+          }
+        }
+      }
+
+      // --- Sự kiện nút ---
+      startBtn.addEventListener('click', startCamera);
+      stopBtn.addEventListener('click', stopCamera);
+
+      // --- Cập nhật độ nhạy từ slider ---
+      sensitivitySlider.addEventListener('input', () => {
+        const val = parseInt(sensitivitySlider.value, 10);
+        currentThreshold = val / 100;
+        sensValue.textContent = currentThreshold.toFixed(2);
+      });
+      // Thiết lập giá trị hiển thị ban đầu
+      sensValue.textContent = (sensitivitySlider.value / 100).toFixed(2);
+
+      // --- Dọn dẹp khi rời trang ---
+      window.addEventListener('beforeunload', () => {
+        stopCamera();
+      });
+
+      // Mở khóa AudioContext khi có tương tác
+      document.body.addEventListener('click', () => {
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      }, { once: false });
+
+      // Tải trước model
+      (async function preloadModel() {
+        try {
+          statusDiv.textContent = 'Đang tải mô hình nhận diện...';
+          model = await cocoSsd.load({ base: 'mobilenet_v2' });
+          statusDiv.textContent = 'Sẵn sàng! Nhấn "Bật camera" để bắt đầu.';
+        } catch (e) {
+          console.warn('Không thể tải model:', e);
+          statusDiv.textContent = 'Lỗi tải mô hình. Vui lòng thử lại.';
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>
