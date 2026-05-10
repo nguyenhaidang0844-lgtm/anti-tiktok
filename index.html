@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-  <title>Cảnh báo dùng điện thoại - Độ nhạy cao</title>
+  <title>Cảnh báo dùng điện thoại (Chạy nền qua PiP)</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, sans-serif;
@@ -206,8 +206,8 @@
   </style>
 </head>
 <body>
-  <h1>📵 Cảnh báo dùng điện thoại (độ nhạy cao)</h1>
-  <p class="sub">Phát hiện điện thoại ở nhiều khoảng cách – kéo thanh trượt để chỉnh độ nhạy</p>
+  <h1>📵 Cảnh báo điện thoại (Chạy nền)</h1>
+  <p class="sub">Phát hiện ngay cả khi bạn chuyển tab – dùng chế độ Picture‑in‑Picture</p>
 
   <div class="container">
     <div class="video-panel">
@@ -227,8 +227,11 @@
         <button id="stopBtn" disabled title="Dừng camera và phát hiện">
           <span>⏹️</span> Dừng
         </button>
+        <button id="pipBtn" disabled title="Mở cửa sổ nổi để chạy ngay cả khi đổi tab">
+          <span>🪟</span> Nổi video (PiP)
+        </button>
       </div>
-      <p class="note">* Cho phép trình duyệt sử dụng webcam. Giá trị càng thấp càng nhạy (dễ cảnh báo hơn).</p>
+      <p class="note">* Bấm "Nổi video" → camera sẽ hiển thị ở góc màn hình, web vẫn quét khi bạn dùng app khác.</p>
     </div>
 
     <div class="status-panel">
@@ -241,11 +244,10 @@
       <ul id="detectionList" class="detection-list">
         <li>Chưa có dữ liệu</li>
       </ul>
-      <p class="note">Mô hình COCO-SSD. Kéo thanh trượt để giảm ngưỡng (bắt được điện thoại nhỏ/xa).</p>
+      <p class="note">PiP giúp camera không bị tạm dừng khi ẩn tab.</p>
     </div>
   </div>
 
-  <!-- TensorFlow.js và COCO-SSD -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
 
@@ -257,6 +259,7 @@
       const ctx = canvas.getContext('2d');
       const startBtn = document.getElementById('startBtn');
       const stopBtn = document.getElementById('stopBtn');
+      const pipBtn = document.getElementById('pipBtn');
       const statusDiv = document.getElementById('statusText');
       const alertBox = document.getElementById('alertBox');
       const detectionList = document.getElementById('detectionList');
@@ -267,15 +270,14 @@
       let model = null;
       let stream = null;
       let isRunning = false;
-      let animationFrameId = null;
-      let lastDetectionTime = 0;
-      const DETECT_INTERVAL_MS = 300; // Quét nhanh hơn một chút (300ms)
-      
-      let lastAlertTime = 0;
-      const ALERT_COOLDOWN_MS = 2200; // Cảnh báo tối thiểu cách nhau 2.2s
+      let intervalId = null;
       let audioCtx = null;
+      let wakeLock = null;
 
-      // Độ nhạy (ngưỡng) mặc định
+      let lastAlertTime = 0;
+      const ALERT_COOLDOWN_MS = 2200;
+      const DETECT_INTERVAL_MS = 300; // Quét mỗi 300ms
+
       let currentThreshold = parseFloat(sensitivitySlider.value) / 100;
 
       // --- Audio ---
@@ -310,7 +312,7 @@
         }
       }
 
-      // --- Cập nhật UI ---
+      // --- UI helpers ---
       function updateDetectionList(predictions) {
         detectionList.innerHTML = '';
         if (!predictions || predictions.length === 0) {
@@ -359,9 +361,8 @@
         });
       }
 
-      function checkForPhoneAlert(predictions) {
+      async function checkForPhoneAlert(predictions) {
         if (!predictions) return;
-        // Dùng ngưỡng hiện tại (từ slider)
         const phoneDetected = predictions.some(pred =>
           pred.class === 'cell phone' && pred.score >= currentThreshold
         );
@@ -377,33 +378,81 @@
         }
       }
 
-      // --- Vòng lặp phát hiện ---
-      async function detectionLoop() {
-        if (!isRunning || !model || !stream) return;
+      // --- Vòng lặp phát hiện (dùng setInterval ổn định hơn khi nền) ---
+      async function runDetection() {
+        if (!isRunning || !model || !stream || video.readyState < 2) return;
         try {
-          const now = Date.now();
-          if (now - lastDetectionTime >= DETECT_INTERVAL_MS) {
-            if (video.readyState === 4) {
-              const predictions = await model.detect(video);
-              lastDetectionTime = now;
-              drawPredictions(predictions);
-              updateDetectionList(predictions);
-              checkForPhoneAlert(predictions);
-            }
+          if (video.readyState === 4) {
+            const predictions = await model.detect(video);
+            drawPredictions(predictions);
+            updateDetectionList(predictions);
+            checkForPhoneAlert(predictions);
           }
-        } catch (error) {
-          console.error('Lỗi phát hiện:', error);
-          statusDiv.textContent = '⚠️ Lỗi phát hiện, đang thử lại...';
+        } catch (e) {
+          console.error('Lỗi phát hiện:', e);
         }
-        animationFrameId = requestAnimationFrame(detectionLoop);
       }
 
-      // --- Camera ---
-      function stopCamera() {
-        if (animationFrameId) {
-          cancelAnimationFrame(animationFrameId);
-          animationFrameId = null;
+      function startLoop() {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = setInterval(runDetection, DETECT_INTERVAL_MS);
+      }
+
+      function stopLoop() {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
         }
+      }
+
+      // --- Wake Lock (giữ màn hình sáng) ---
+      async function enableWakeLock() {
+        try {
+          if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            statusDiv.textContent += ' | Màn hình sẽ không tắt.';
+            wakeLock.addEventListener('release', () => {
+              console.log('Wake Lock released');
+            });
+          }
+        } catch (err) {
+          console.log('Wake Lock không khả dụng:', err);
+        }
+      }
+
+      async function disableWakeLock() {
+        if (wakeLock) {
+          await wakeLock.release();
+          wakeLock = null;
+        }
+      }
+
+      // --- Picture‑in‑Picture ---
+      async function togglePip() {
+        try {
+          if (document.pictureInPictureElement) {
+            await document.exitPictureInPicture();
+            pipBtn.classList.remove('active');
+          } else {
+            await video.requestPictureInPicture();
+            pipBtn.classList.add('active');
+            statusDiv.textContent = '🟢 PiP đang hoạt động – camera chạy ngay cả khi đổi tab.';
+          }
+        } catch (err) {
+          alert('Trình duyệt không hỗ trợ PiP hoặc chưa bật camera.');
+          console.error(err);
+        }
+      }
+
+      // Khi PiP bị đóng tự động
+      video.addEventListener('leavepictureinpicture', () => {
+        pipBtn.classList.remove('active');
+        statusDiv.textContent = '🟢 Đang giám sát (không PiP)';
+      });
+
+      // --- Camera ---
+      async function stopCamera() {
+        stopLoop();
         if (stream) {
           stream.getTracks().forEach(track => track.stop());
           stream = null;
@@ -413,10 +462,16 @@
         isRunning = false;
         startBtn.disabled = false;
         stopBtn.disabled = true;
+        pipBtn.disabled = true;
         startBtn.classList.remove('active');
         alertBox.classList.add('hidden');
         statusDiv.textContent = 'Đã dừng camera.';
         detectionList.innerHTML = '<li>Chưa có dữ liệu</li>';
+        // Thoát PiP nếu còn
+        if (document.pictureInPictureElement) {
+          document.exitPictureInPicture();
+        }
+        await disableWakeLock();
       }
 
       async function startCamera() {
@@ -425,13 +480,10 @@
         stopBtn.disabled = false;
         startBtn.classList.add('active');
         statusDiv.textContent = 'Đang yêu cầu quyền truy cập webcam...';
+
         try {
           stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              facingMode: 'user'
-            }
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
           });
           video.srcObject = stream;
           await new Promise(resolve => { video.onloadedmetadata = resolve; });
@@ -440,60 +492,53 @@
           if (!model) {
             statusDiv.textContent = 'Đang tải mô hình COCO-SSD...';
             model = await cocoSsd.load({ base: 'mobilenet_v2' });
-            statusDiv.textContent = 'Đã tải mô hình. Bắt đầu phát hiện...';
           }
+
           isRunning = true;
-          lastDetectionTime = 0;
-          lastAlertTime = 0;
+          pipBtn.disabled = false; // Cho phép PiP sau khi có video
           statusDiv.textContent = '🟢 Đang giám sát...';
-          detectionLoop();
+          startLoop();
+          await enableWakeLock();
         } catch (error) {
           console.error('Lỗi truy cập webcam:', error);
-          statusDiv.textContent = '❌ Không thể truy cập webcam. Hãy kiểm tra quyền.';
+          statusDiv.textContent = '❌ Không thể truy cập webcam. Kiểm tra quyền.';
           startBtn.disabled = false;
           stopBtn.disabled = true;
           startBtn.classList.remove('active');
-          if (stream) {
-            stream.getTracks().forEach(t => t.stop());
-            stream = null;
-          }
         }
       }
 
-      // --- Sự kiện nút ---
+      // --- Sự kiện ---
       startBtn.addEventListener('click', startCamera);
       stopBtn.addEventListener('click', stopCamera);
+      pipBtn.addEventListener('click', togglePip);
 
-      // --- Cập nhật độ nhạy từ slider ---
       sensitivitySlider.addEventListener('input', () => {
         const val = parseInt(sensitivitySlider.value, 10);
         currentThreshold = val / 100;
         sensValue.textContent = currentThreshold.toFixed(2);
       });
-      // Thiết lập giá trị hiển thị ban đầu
       sensValue.textContent = (sensitivitySlider.value / 100).toFixed(2);
 
-      // --- Dọn dẹp khi rời trang ---
+      // Dọn dẹp khi rời trang
       window.addEventListener('beforeunload', () => {
         stopCamera();
+        stopLoop();
       });
 
-      // Mở khóa AudioContext khi có tương tác
+      // Mở khoá AudioContext
       document.body.addEventListener('click', () => {
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       }, { once: false });
 
-      // Tải trước model
-      (async function preloadModel() {
+      // Tải model trước
+      (async function preload() {
         try {
-          statusDiv.textContent = 'Đang tải mô hình nhận diện...';
+          statusDiv.textContent = 'Đang tải mô hình...';
           model = await cocoSsd.load({ base: 'mobilenet_v2' });
-          statusDiv.textContent = 'Sẵn sàng! Nhấn "Bật camera" để bắt đầu.';
+          statusDiv.textContent = 'Sẵn sàng! Nhấn "Bật camera".';
         } catch (e) {
-          console.warn('Không thể tải model:', e);
-          statusDiv.textContent = 'Lỗi tải mô hình. Vui lòng thử lại.';
+          statusDiv.textContent = 'Lỗi tải mô hình.';
         }
       })();
     })();
